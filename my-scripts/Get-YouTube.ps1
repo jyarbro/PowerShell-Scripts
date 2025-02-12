@@ -3,88 +3,149 @@
     Downloads YouTube content using yt-dlp with configurable settings.
 
 .DESCRIPTION
-    This function wraps yt-dlp to download videos or playlists. It expects two global variables:
-    - YT_DLP_PATH: The folder where yt-dlp.exe is installed.
-    - YT_OUTPUT_DIR: The download output directory.
-    
-    These variables should be set in your PowerShell profile to hide environment-specific details.
-    
+    This function downloads YouTube videos or playlists using yt-dlp.
+    It uses two configurable parameters:
+      - YT_DLP_PATH: Folder where yt-dlp.exe is located.
+      - OUTPUT_DIR: Folder where downloads are saved.
+    If these are not provided on the command line, the function will try
+    to use the corresponding global variables. If those are not set, then for
+    YT_DLP_PATH it defaults to "$env:LOCALAPPDATA\bin\yt-dlp\" and for OUTPUT_DIR
+    it will try to use the result of Get-DownloadsPath. No fallback is provided if
+    Get-DownloadsPath is unavailable.
+
 .PARAMETER Url
-    The URL of the YouTube video or playlist.
+    The URL of the YouTube video or playlist to download.
+    (Required for download operations.)
 
 .PARAMETER Playlist
-    A switch indicating that the provided URL is a playlist. When set, the function passes the --yes-playlist
-    flag to yt-dlp.
+    A switch indicating that the provided URL is a playlist.
+    When set, the function passes the --yes-playlist flag to yt-dlp.
 
 .PARAMETER Format
-    The format selection string for yt-dlp. Defaults to a format that selects MP4 video up to 1080p.
-    
+    The format selection string for yt-dlp.
+    Defaults to:
+    "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4] / wv*+ba/w"
+
+.PARAMETER YT_DLP_PATH
+    Optional. Specifies the path to yt-dlp.exe.
+    Overrides the global variable if provided; otherwise, falls back to the global variable,
+    and then to the default value "$env:LOCALAPPDATA\bin\yt-dlp\".
+
+.PARAMETER OUTPUT_DIR
+    Optional. Specifies the output directory for downloads.
+    Overrides the global variable if provided; otherwise, falls back to the global variable,
+    then to the result of Get-DownloadsPath if available.
+    No fallback is provided if Get-DownloadsPath is unavailable.
+
+.PARAMETER ShowHelp
+    Displays this help text.
+    Accepts the aliases -? and -Help.
+
+.EXAMPLE
+    Get-YouTube -Url "https://www.youtube.com/watch?v=XXXXXX"
+    Downloads the specified YouTube video using the configured paths.
+
 .EXAMPLE
     Get-YouTube -Url "https://www.youtube.com/playlist?list=XXXXXX" -Playlist
     Downloads all videos in the specified playlist.
 
 .EXAMPLE
-    Get-YouTube -Url "https://www.youtube.com/watch?v=XXXXXX"
-    Downloads the specified video.
+    Get-YouTube -Url "https://www.youtube.com/watch?v=XXXXXX" `
+               -YT_DLP_PATH "C:\Custom\yt-dlp" `
+               -OUTPUT_DIR "E:\MyDownloads"
+    Downloads the specified video using custom paths.
+
+.EXAMPLE
+    Get-YouTube -Help 
+    or 
+    Get-YouTube -?
+    Displays the detailed help.
 #>
 function Get-YouTube {
     [CmdletBinding()]
     param(
-        [Parameter(Mandatory = $true, Position = 0)]
+        [Parameter(Position = 0)]
         [string]$Url,
-
-        [Parameter(Mandatory = $false)]
+        
         [switch]$Playlist,
-
-        [Parameter(Mandatory = $false)]
-        [string]$Format = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4] / wv*+ba/w"
+        
+        [string]$Format = "bv*[height<=1080][ext=mp4]+ba[ext=m4a]/b[height<=1080][ext=mp4] / wv*+ba/w",
+        
+        [string]$YT_DLP_PATH,
+        
+        [string]$OUTPUT_DIR,
+        
+        [Alias("?", "Help")]
+        [switch]$ShowHelp
     )
 
-    begin {
-        # Retrieve configuration variables defined in your profile script.
-        if (-not (Get-Variable -Name YT_DLP_PATH -Scope Global -ErrorAction SilentlyContinue)) {
-            throw "Global variable 'YT_DLP_PATH' is not set. Please set it in your profile script."
+    # If the user requests help, display it and exit.
+    if ($ShowHelp) {
+        Get-Help -Detailed $MyInvocation.MyCommand.Name
+        return
+    }
+    
+    # Friendly error message if URL is not provided.
+    if (-not $Url) {
+        Write-Error "Error: The 'Url' parameter is required. Please provide a valid YouTube URL. For usage instructions, use Get-YouTube -Help."
+        return
+    }
+    
+    # Determine YT_DLP_PATH:
+    if (-not $YT_DLP_PATH) {
+        if (Get-Variable -Name YT_DLP_PATH -Scope Global -ErrorAction SilentlyContinue) {
+            $YT_DLP_PATH = (Get-Variable -Name YT_DLP_PATH -Scope Global).Value
         }
-        if (-not (Get-Variable -Name YT_OUTPUT_DIR -Scope Global -ErrorAction SilentlyContinue)) {
-            throw "Global variable 'YT_OUTPUT_DIR' is not set. Please set it in your profile script."
-        }
-        $ytDlpPath   = (Get-Variable -Name YT_DLP_PATH -Scope Global).Value
-        $ytOutputDir = (Get-Variable -Name YT_OUTPUT_DIR -Scope Global).Value
-
-        # Verify that the directories exist.
-        if (-not (Test-Path $ytDlpPath)) {
-            throw "The yt-dlp path ($ytDlpPath) does not exist. Please verify YT_DLP_PATH."
-        }
-        if (-not (Test-Path $ytOutputDir)) {
-            throw "The output directory ($ytOutputDir) does not exist. Please verify YT_OUTPUT_DIR."
+        else {
+            $YT_DLP_PATH = "$env:LOCALAPPDATA\bin\yt-dlp\"
         }
     }
-
-    process {
-        # Build the argument list for yt-dlp.
-        $args = @(
-            "--ignore-errors",
-            "--extract-audio",
-            "--sponsorblock-remove", "all",
-            "--keep-video",
-            "--output", "$ytOutputDir\%(title)s.%(ext)s"
-        )
-
-        if ($Playlist) {
-            $args += "--yes-playlist"
+    
+    # Determine OUTPUT_DIR:
+    if (-not $OUTPUT_DIR) {
+        if (Get-Variable -Name OUTPUT_DIR -Scope Global -ErrorAction SilentlyContinue) {
+            $OUTPUT_DIR = (Get-Variable -Name OUTPUT_DIR -Scope Global).Value
         }
-
-        $args += $Url
-        $args += "-f"
-        $args += $Format
-
-        # Change directory to the yt-dlp installation folder, execute, then restore location.
-        Push-Location $ytDlpPath
-        try {
-            & .\yt-dlp.exe @args
+        else {
+            if (Get-Command Get-DownloadsPath -ErrorAction SilentlyContinue) {
+                $OUTPUT_DIR = Get-DownloadsPath
+            }
         }
-        finally {
-            Pop-Location
-        }
+    }
+    
+    # Validate that the directories exist.
+    if (-not (Test-Path $YT_DLP_PATH)) {
+        Write-Error "Error: The yt-dlp path ($YT_DLP_PATH) does not exist. Please verify YT_DLP_PATH."
+        return
+    }
+    if (-not (Test-Path $OUTPUT_DIR)) {
+        Write-Error "Error: The output directory ($OUTPUT_DIR) does not exist. Please verify OUTPUT_DIR."
+        return
+    }
+    
+    # Build the argument list for yt-dlp.exe.
+    $args = @(
+        "--ignore-errors",
+        "--extract-audio",
+        "--sponsorblock-remove", "all",
+        "--keep-video",
+        "--output", "$OUTPUT_DIR\%(title)s.%(ext)s"
+    )
+    
+    if ($Playlist) {
+        $args += "--yes-playlist"
+    }
+    
+    $args += $Url
+    $args += "-f"
+    $args += $Format
+    
+    # Change directory to the yt-dlp installation folder, execute the command, then restore location.
+    Push-Location $YT_DLP_PATH
+    try {
+        & .\yt-dlp.exe @args
+    }
+    finally {
+        Pop-Location
     }
 }
