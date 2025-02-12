@@ -1,4 +1,4 @@
-The powershell profile file is located at $PROFILE in powershell.
+Run this command from powershell:
+`explorer.exe (Split-Path $PROFILE)`
 
-When using OneDrive, that path looks like:
-C:\Users\<USER>\OneDrive\Documents\WindowsPowerShell
+Clone this repository in the folder from the resulting window.
