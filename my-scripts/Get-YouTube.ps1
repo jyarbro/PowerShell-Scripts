@@ -6,12 +6,13 @@
     This function downloads YouTube videos or playlists using yt-dlp.
     It uses two configurable parameters:
       - YT_DLP_PATH: Folder where yt-dlp.exe is located.
-      - OUTPUT_DIR: Folder where downloads are saved.
+      - YT_OUTPUT_DIR: Folder where downloads are saved.
     If these are not provided on the command line, the function will try
     to use the corresponding global variables. If those are not set, then for
-    YT_DLP_PATH it defaults to "$env:LOCALAPPDATA\bin\yt-dlp\" and for OUTPUT_DIR
-    it will try to use the result of Get-DownloadsPath. No fallback is provided if
-    Get-DownloadsPath is unavailable.
+    YT_DLP_PATH it defaults to "$env:LOCALAPPDATA\bin\yt-dlp\" and for YT_OUTPUT_DIR
+    it will try to use the result of Get-DownloadsPath (if available).
+    
+    **New:** This function now calls Update-YTDLP to update yt-dlp if a newer release is available.
 
 .PARAMETER Url
     The URL of the YouTube video or playlist to download.
@@ -31,7 +32,7 @@
     Overrides the global variable if provided; otherwise, falls back to the global variable,
     and then to the default value "$env:LOCALAPPDATA\bin\yt-dlp\".
 
-.PARAMETER OUTPUT_DIR
+.PARAMETER YT_OUTPUT_DIR
     Optional. Specifies the output directory for downloads.
     Overrides the global variable if provided; otherwise, falls back to the global variable,
     then to the result of Get-DownloadsPath if available.
@@ -52,7 +53,7 @@
 .EXAMPLE
     Get-YouTube -Url "https://www.youtube.com/watch?v=XXXXXX" `
                -YT_DLP_PATH "C:\Custom\yt-dlp" `
-               -OUTPUT_DIR "E:\MyDownloads"
+               -YT_OUTPUT_DIR "E:\MyDownloads"
     Downloads the specified video using custom paths.
 
 .EXAMPLE
@@ -73,13 +74,13 @@ function Get-YouTube {
         
         [string]$YT_DLP_PATH,
         
-        [string]$OUTPUT_DIR,
+        [string]$YT_OUTPUT_DIR,
         
         [Alias("?", "Help")]
         [switch]$ShowHelp
     )
 
-    # If the user requests help, display it and exit.
+    # If help is requested, display it and exit.
     if ($ShowHelp) {
         Get-Help -Detailed $MyInvocation.MyCommand.Name
         return
@@ -101,16 +102,25 @@ function Get-YouTube {
         }
     }
     
-    # Determine OUTPUT_DIR:
-    if (-not $OUTPUT_DIR) {
-        if (Get-Variable -Name OUTPUT_DIR -Scope Global -ErrorAction SilentlyContinue) {
-            $OUTPUT_DIR = (Get-Variable -Name OUTPUT_DIR -Scope Global).Value
+    # Determine YT_OUTPUT_DIR:
+    if (-not $YT_OUTPUT_DIR) {
+        if (Get-Variable -Name YT_OUTPUT_DIR -Scope Global -ErrorAction SilentlyContinue) {
+            $YT_OUTPUT_DIR = (Get-Variable -Name YT_OUTPUT_DIR -Scope Global).Value
         }
         else {
             if (Get-Command Get-DownloadsPath -ErrorAction SilentlyContinue) {
-                $OUTPUT_DIR = Get-DownloadsPath
+                $YT_OUTPUT_DIR = Get-DownloadsPath
             }
         }
+    }
+    
+    # Call Update-YTDLP to update yt-dlp if a newer release is available.
+    if (Get-Command Update-YTDLP -ErrorAction SilentlyContinue) {
+        Write-Output "Checking for yt-dlp updates..."
+        Update-YTDLP -YT_DLP_PATH $YT_DLP_PATH
+    }
+    else {
+        Write-Verbose "Update-YTDLP function not found, skipping update."
     }
     
     # Validate that the directories exist.
@@ -118,8 +128,8 @@ function Get-YouTube {
         Write-Error "Error: The yt-dlp path ($YT_DLP_PATH) does not exist. Please verify YT_DLP_PATH."
         return
     }
-    if (-not (Test-Path $OUTPUT_DIR)) {
-        Write-Error "Error: The output directory ($OUTPUT_DIR) does not exist. Please verify OUTPUT_DIR."
+    if (-not (Test-Path $YT_OUTPUT_DIR)) {
+        Write-Error "Error: The output directory ($YT_OUTPUT_DIR) does not exist. Please verify YT_OUTPUT_DIR."
         return
     }
     
@@ -129,7 +139,7 @@ function Get-YouTube {
         "--extract-audio",
         "--sponsorblock-remove", "all",
         "--keep-video",
-        "--output", "$OUTPUT_DIR\%(title)s.%(ext)s"
+        "--output", "$YT_OUTPUT_DIR\%(title)s.%(ext)s"
     )
     
     if ($Playlist) {
